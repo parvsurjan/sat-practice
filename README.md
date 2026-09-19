@@ -41,11 +41,13 @@ drawn for.
 ## The three screens
 
 **Practice** — one question at a time, drawn from the whole bank with unseen
-questions first. Difficulty, domain and skill are shown up front. Pick an answer
-and the correct choice, your choice, and the full rationale appear immediately.
+questions first. Difficulty, domain and skill are shown up front. Tap a choice to
+select it, tap it again to clear it, then commit with **Submit answer** in the
+pinned bottom bar — nothing is recorded until you submit. The correct choice, your
+choice and the full rationale then appear, and the button becomes **Next question**.
 **Mark for Review** saves a question; the **ABC** button turns on Bluebook's
 cross-out tool for eliminating choices; the filter icon narrows practice to
-particular difficulties or categories; the shuffle icon skips. Tap a chart to enlarge it.
+particular difficulties or categories. Tap a chart to enlarge it.
 
 **Review** — two separate sections:
 - *Needs work* — every question you have missed. The two dots on each row show

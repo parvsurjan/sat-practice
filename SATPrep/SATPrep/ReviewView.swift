@@ -92,7 +92,8 @@ struct ReviewQuestionView: View {
     @Environment(Store.self) private var store
     @Environment(\.dismiss) private var dismiss
     let question: Question
-    @State private var chosen: Int?
+    @State private var selection: Int?
+    @State private var submitted = false
     @State private var retiredNow = false
     /// Captured before answering: only a question that was actually in the queue can graduate out of it.
     @State private var wasInQueue = false
@@ -102,13 +103,10 @@ struct ReviewQuestionView: View {
             VStack(alignment: .leading, spacing: 20) {
                 QuestionCard(
                     question: question,
-                    chosen: $chosen,
+                    selection: $selection,
+                    submitted: submitted,
                     isBookmarked: store.progress(question.id).bookmarked,
-                    onBookmark: { store.toggleBookmark(question.id) },
-                    onSubmit: { i in
-                        store.record(question: question, chosen: i)
-                        retiredNow = wasInQueue && store.progress(question.id).retired
-                    }
+                    onBookmark: { store.toggleBookmark(question.id) }
                 )
                 if retiredNow {
                     Label("Two in a row — removed from Needs work.", systemImage: "graduationcap.fill")
@@ -118,20 +116,27 @@ struct ReviewQuestionView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(BB.greenWash, in: RoundedRectangle(cornerRadius: BB.cardRadius))
                 }
-                if chosen != nil {
-                    Button { dismiss() } label: {
-                        Label("Done", systemImage: "checkmark")
-                            .frame(maxWidth: .infinity).padding(.vertical, 6)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                }
             }
             .padding()
         }
         .background(BB.surface)
+        .safeAreaInset(edge: .bottom) {
+            AnswerBar(submitted: submitted,
+                      hasSelection: selection != nil,
+                      submitTitle: "Submit answer",
+                      nextTitle: "Done",
+                      onSubmit: submit,
+                      onNext: { dismiss() })
+        }
         .navigationTitle("Review")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { wasInQueue = store.progress(question.id).isInWrongQueue }
+    }
+
+    private func submit() {
+        guard let pick = selection, !submitted else { return }
+        submitted = true
+        store.record(question: question, chosen: pick)
+        retiredNow = wasInQueue && store.progress(question.id).retired
     }
 }

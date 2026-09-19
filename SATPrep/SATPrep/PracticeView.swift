@@ -4,7 +4,8 @@ struct PracticeView: View {
     @Environment(Store.self) private var store
 
     @State private var current: Question?
-    @State private var chosen: Int?
+    @State private var selection: Int?
+    @State private var submitted = false
     @State private var showFilters = false
     @AppStorage("filterDifficulties") private var difficultiesRaw = ""
     @AppStorage("filterDomains") private var domainsRaw = ""
@@ -26,29 +27,26 @@ struct PracticeView: View {
                                 Color.clear.frame(height: 0).id("top")
                                 QuestionCard(
                                     question: q,
-                                    chosen: $chosen,
+                                    selection: $selection,
+                                    submitted: submitted,
                                     isBookmarked: store.progress(q.id).bookmarked,
-                                    onBookmark: { store.toggleBookmark(q.id) },
-                                    onSubmit: { store.record(question: q, chosen: $0) }
+                                    onBookmark: { store.toggleBookmark(q.id) }
                                 )
-                                if chosen != nil {
-                                    Button {
-                                        advance()
-                                        proxy.scrollTo("top", anchor: .top)
-                                    } label: {
-                                        Text("Next question")
-                                            .font(.system(size: 16, weight: .semibold))
-                                            .foregroundStyle(.white)
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 14)
-                                            .background(BB.blue, in: Capsule())
-                                    }
-                                    .buttonStyle(.plain)
-                                }
                             }
                             .padding()
                         }
                         .background(BB.surface)
+                        .safeAreaInset(edge: .bottom) {
+                            AnswerBar(submitted: submitted,
+                                      hasSelection: selection != nil,
+                                      submitTitle: "Submit answer",
+                                      nextTitle: "Next question",
+                                      onSubmit: { submit(q) },
+                                      onNext: {
+                                          advance()
+                                          proxy.scrollTo("top", anchor: .top)
+                                      })
+                        }
                     }
                 } else {
                     ContentUnavailableView("No questions match",
@@ -65,10 +63,6 @@ struct PracticeView: View {
                               : "line.3.horizontal.decrease.circle.fill")
                     }
                 }
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { advance() } label: { Image(systemName: "shuffle") }
-                        .accessibilityLabel("Skip to another question")
-                }
             }
             .sheet(isPresented: $showFilters) {
                 FilterSheet(difficultiesRaw: $difficultiesRaw, domainsRaw: $domainsRaw)
@@ -80,8 +74,15 @@ struct PracticeView: View {
         }
     }
 
+    private func submit(_ q: Question) {
+        guard let pick = selection, !submitted else { return }
+        submitted = true
+        store.record(question: q, chosen: pick)
+    }
+
     private func advance() {
-        chosen = nil
+        selection = nil
+        submitted = false
         #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-forceQuestion"), i + 1 < args.count,
@@ -89,7 +90,8 @@ struct PracticeView: View {
             current = forced
             if let j = args.firstIndex(of: "-autoAnswer"), j + 1 < args.count,
                let pick = Int(args[j + 1]) {
-                chosen = pick
+                selection = pick
+                submitted = args.contains("-autoSubmit")
             }
             return
         }

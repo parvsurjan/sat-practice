@@ -200,29 +200,27 @@ struct ChoiceRow: View {
     }
 }
 
-/// Renders a question, its choices, and — once answered — the result and rationale.
+/// Renders a question and its choices. Selection is tentative until the parent submits it,
+/// so a choice can be changed or cleared first — as in Bluebook.
 struct QuestionCard: View {
     let question: Question
-    @Binding var chosen: Int?
+    @Binding var selection: Int?
+    let submitted: Bool
     let isBookmarked: Bool
     let onBookmark: () -> Void
-    let onSubmit: (Int) -> Void
 
     @State private var crossOutEnabled = false
     @State private var crossedOut: Set<Int> = []
 
-    private var answered: Bool { chosen != nil }
-
     private func state(for i: Int) -> ChoiceRow.ChoiceState {
-        guard let chosen else { return .idle }
+        guard submitted else { return selection == i ? .selected : .idle }
         if i == question.correct { return .correct }
-        if i == chosen { return .wrong }
+        if i == selection { return .wrong }
         return .idle
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            // Toolbar: metadata on the left, Bluebook's two tools on the right.
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
                     DifficultyBadge(difficulty: question.difficulty)
@@ -269,12 +267,12 @@ struct QuestionCard: View {
                     ChoiceRow(letter: Question.letter(i),
                               text: question.choices[i],
                               state: state(for: i),
-                              crossOutEnabled: crossOutEnabled && !answered,
+                              crossOutEnabled: crossOutEnabled && !submitted,
                               isCrossedOut: crossedOut.contains(i),
                               onSelect: {
-                                  guard !answered else { return }
-                                  chosen = i
-                                  onSubmit(i)
+                                  guard !submitted else { return }
+                                  // Tapping the current choice again clears it.
+                                  selection = (selection == i) ? nil : i
                               },
                               onCrossOut: {
                                   if crossedOut.contains(i) { crossedOut.remove(i) }
@@ -283,15 +281,46 @@ struct QuestionCard: View {
                 }
             }
 
-            if let chosen {
-                ResultPanel(question: question, chosen: chosen)
+            if submitted, let selection {
+                ResultPanel(question: question, chosen: selection)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: chosen)
+        .animation(.easeInOut(duration: 0.18), value: selection)
+        .animation(.easeInOut(duration: 0.18), value: submitted)
         .onChange(of: question.id) {
             crossedOut = []
             crossOutEnabled = false
         }
+    }
+}
+
+/// The pinned action bar: Submit while answering, Next once the answer is in.
+struct AnswerBar: View {
+    let submitted: Bool
+    let hasSelection: Bool
+    let submitTitle: String
+    let nextTitle: String
+    let onSubmit: () -> Void
+    let onNext: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Divider().overlay(BB.ruleSoft)
+            Button(action: submitted ? onNext : onSubmit) {
+                Text(submitted ? nextTitle : submitTitle)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(submitted || hasSelection ? BB.blue : BB.rule, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(!submitted && !hasSelection)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 6)
+        }
+        .background(.regularMaterial)
     }
 }
 
