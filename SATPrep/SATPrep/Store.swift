@@ -159,6 +159,12 @@ final class Store {
         questions.filter { progress($0.id).isInWrongQueue }
     }
 
+    /// Every question missed at least once, matching `filter`. Missing it is permanent
+    /// (until reset) even after the question graduates out of Needs work.
+    func everMissed(where filter: (Question) -> Bool) -> [Question] {
+        questions.filter { progress($0.id).everWrong && filter($0) }
+    }
+
     /// A question to practise next, honouring the filters and preferring unseen questions.
     func nextQuestion(difficulties: Set<Difficulty>, domains: Set<String>, excluding: String?) -> Question? {
         var pool = questions.filter {

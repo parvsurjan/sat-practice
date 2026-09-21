@@ -46,6 +46,16 @@ struct StatsView: View {
                                 StatTile(value: "\(store.needsWork.count)", label: "Needs work")
                             }
                             .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                            NavigationLink {
+                                MissedListView(title: "All missed", questions: store.everMissed { _ in true })
+                            } label: {
+                                HStack {
+                                    Text("All missed questions").font(.subheadline)
+                                    Spacer()
+                                    Text("\(store.everMissed { _ in true }.count)")
+                                        .font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
+                                }
+                            }
                             HStack {
                                 Text("Question bank covered").font(.subheadline)
                                 Spacer()
@@ -55,14 +65,17 @@ struct StatsView: View {
                         }
 
                         BucketSection(title: "By difficulty",
+                                      match: { name, q in q.difficulty.rawValue == name },
                                       buckets: bucket(\.difficulty.rawValue)
                                         .sorted { (Difficulty(rawValue: $0.name)?.sortOrder ?? 0)
                                                 < (Difficulty(rawValue: $1.name)?.sortOrder ?? 0) })
 
                         BucketSection(title: "By category",
+                                      match: { name, q in q.domain == name },
                                       buckets: bucket(\.domain).sorted { $0.accuracy < $1.accuracy })
 
                         BucketSection(title: "By skill — weakest first",
+                                      match: { name, q in q.skill == name },
                                       buckets: bucket(\.skill).sorted { $0.accuracy < $1.accuracy })
 
                         Section {
@@ -101,12 +114,24 @@ private struct StatTile: View {
 
 /// Magnitude comparison: one hue, value always labeled in text ink so nothing is colour-alone.
 private struct BucketSection: View {
+    @Environment(Store.self) private var store
     let title: String
+    let match: (String, Question) -> Bool
     let buckets: [Bucket]
 
     var body: some View {
         Section(title) {
             ForEach(buckets) { b in
+                NavigationLink {
+                    MissedListView(title: b.name, questions: store.everMissed { match(b.name, $0) })
+                } label: {
+                    row(b)
+                }
+            }
+        }
+    }
+
+    private func row(_ b: Bucket) -> some View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
                         Text(b.name).font(.subheadline)
@@ -128,7 +153,62 @@ private struct BucketSection: View {
                 .padding(.vertical, 2)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(b.name): \(Int(b.accuracy * 100)) percent, \(b.correct) of \(b.total) correct")
+    }
+}
+
+/// Every question ever missed in a group. Unlike Needs work, nothing leaves this list
+/// until progress is reset, and reattempting from here never changes any data.
+private struct MissedListView: View {
+    @Environment(Store.self) private var store
+    let title: String
+    let questions: [Question]
+
+    var body: some View {
+        Group {
+            if questions.isEmpty {
+                ContentUnavailableView("Nothing missed", systemImage: "checkmark.circle",
+                    description: Text("Questions you get wrong in this group will be listed here."))
+            } else {
+                List(questions) { q in
+                    NavigationLink {
+                        PracticeAttemptView(question: q)
+                    } label: {
+                        ReviewRow(question: q, progress: store.progress(q.id), showStreak: false)
+                    }
+                }
+                .listStyle(.plain)
             }
         }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// Reattempt a missed question for practice. Records nothing: no stats, streaks or queues change.
+private struct PracticeAttemptView: View {
+    @Environment(\.dismiss) private var dismiss
+    let question: Question
+    @State private var selection: Int?
+    @State private var submitted = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Label("Practice only — this won't affect your stats.", systemImage: "info.circle")
+                    .font(.footnote).foregroundStyle(.secondary)
+                QuestionCard(question: question, selection: $selection, submitted: submitted,
+                             isBookmarked: false, onBookmark: {})
+            }
+            .padding()
+        }
+        .background(BB.surface)
+        .safeAreaInset(edge: .bottom) {
+            AnswerBar(submitted: submitted, hasSelection: selection != nil,
+                      submitTitle: "Submit answer", nextTitle: "Done",
+                      onSubmit: { if selection != nil { submitted = true } },
+                      onNext: { dismiss() })
+        }
+        .navigationTitle("Reattempt")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
