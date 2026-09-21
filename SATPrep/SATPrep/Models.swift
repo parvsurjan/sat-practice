@@ -19,7 +19,18 @@ struct Question: Codable, Identifiable, Hashable {
     let explanation: String
     let figures: [String]
 
+    /// `stem` with the underline markers removed, for previews and plain-text checks.
+    var plainStem: String { Self.stripUnderlineMarkers(stem) }
+
     var correctLetter: String { Self.letter(correct) }
+
+    /// The extractor wraps text that is underlined in the source PDF in these private-use scalars.
+    static let underlineOn: Character = "\u{E000}"
+    static let underlineOff: Character = "\u{E001}"
+    static func stripUnderlineMarkers(_ s: String) -> String {
+        s.filter { $0 != underlineOn && $0 != underlineOff }
+    }
+
     static func letter(_ i: Int) -> String { String(UnicodeScalar(65 + i)!) }
 }
 

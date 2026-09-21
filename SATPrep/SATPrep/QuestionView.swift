@@ -86,25 +86,45 @@ struct StemView: View {
 
     private var parts: (passage: [String], prompt: String?) {
         var paras = stem.components(separatedBy: "\n").filter { !$0.isEmpty }
-        guard let last = paras.last, last.hasSuffix("?") || last.hasSuffix(":") else {
+        guard let last = paras.last,
+              Question.stripUnderlineMarkers(last).hasSuffix("?") || Question.stripUnderlineMarkers(last).hasSuffix(":") else {
             return (paras, nil)
         }
         paras.removeLast()
         return (paras, last)
     }
 
+    /// Text between underline markers is drawn underlined, as in the original question.
+    private func styled(_ s: String) -> Text {
+        var result = Text("")
+        var underlined = false
+        var run = ""
+        func flush() {
+            guard !run.isEmpty else { return }
+            result = result + (underlined ? Text(run).underline() : Text(run))
+            run = ""
+        }
+        for ch in s {
+            if ch == Question.underlineOn { flush(); underlined = true }
+            else if ch == Question.underlineOff { flush(); underlined = false }
+            else { run.append(ch) }
+        }
+        flush()
+        return result
+    }
+
     var body: some View {
         let p = parts
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(p.passage.enumerated()), id: \.offset) { _, para in
-                Text(para)
+                styled(para)
                     .font(.system(size: 17))
                     .foregroundStyle(BB.ink)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let prompt = p.prompt {
-                Text(prompt)
+                styled(prompt)
                     .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(BB.ink)
                     .lineSpacing(3)

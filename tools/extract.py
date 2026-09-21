@@ -118,13 +118,42 @@ def figure_bands(page, cut):
         else: merged.append(b)
     return [R(8,y0,page.rect.x1-8,y1) for y0,y1 in merged]
 
+UL_ON, UL_OFF = "", ""   # private-use markers around underlined text
+
+def underline_rects(page):
+    return [R(d["rect"]) for d in page.get_drawings()
+            if R(d["rect"]).height<=2.0 and R(d["rect"]).width>3]
+
+def marked_line_text(ln, uls):
+    """Line text with UL_ON/UL_OFF around characters that sit on a drawn underline.
+
+    The PDFs draw an underlined phrase as a thin rectangle just under the text, not as a
+    font attribute, so it has to be recovered geometrically.
+    """
+    out=[]; on=False
+    for sp in ln["spans"]:
+        for ch in sp["chars"]:
+            c=R(ch["bbox"]); mid=(c.x0+c.x1)/2
+            u = ch["c"].strip()!="" or on   # spaces only continue an open run
+            hit = u and any(r.x0-1<=mid<=r.x1+1 and (c.y0+c.y1)/2<=r.y0<=c.y1+4 for r in uls)
+            if hit and not on: out.append(UL_ON); on=True
+            elif not hit and on and ch["c"].strip()!="": out.append(UL_OFF); on=False
+            out.append(ch["c"])
+    if on: out.append(UL_OFF)
+    s="".join(out)
+    # keep whitespace outside the markers and drop empty runs
+    s=re.sub(UL_ON+r"(\s+)", r"\1"+UL_ON, s)
+    s=re.sub(r"(\s+)"+UL_OFF, UL_OFF+r"\1", s)
+    return s.replace(UL_ON+UL_OFF,"")
+
 def page_paragraphs(page, cut, bands, qid):
     """Reconstruct paragraphs: merge visual lines (incl. superscripts), join wrapped lines."""
     frags=[]
-    for bi,blk in enumerate(page.get_text("dict")["blocks"]):
+    uls=underline_rects(page)
+    for bi,blk in enumerate(page.get_text("rawdict")["blocks"]):
         if blk["type"]!=0: continue
         for ln in blk["lines"]:
-            r=R(ln["bbox"]); txt="".join(sp["text"] for sp in ln["spans"])
+            r=R(ln["bbox"]); txt=marked_line_text(ln, uls)
             if not txt.strip() or r.get_area()<=0: continue
             frags.append({"bi":bi,"r":r,"t":txt})
     frags.sort(key=lambda f:(f["r"].y0,f["r"].x0))

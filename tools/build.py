@@ -3,11 +3,13 @@ raw=json.load(open("raw.json"))
 LET="ABCD"
 
 TERM=re.compile(r'[.?!\u201d"\u2019\']\s*$')
+MARK=re.compile("[\ue000\ue001]")   # underline markers from extract.py
+bare=lambda s: MARK.sub("", s)
 def reflow(t):
     lines=[l for l in t.split("\n") if l.strip()]
     out=[]
     for l in lines:
-        if out and re.match(r"^[a-z0-9(\u2014\u2013,;)]", l) and not TERM.search(out[-1]):
+        if out and re.match(r"^[a-z0-9(\u2014\u2013,;)]", bare(l)) and not TERM.search(bare(out[-1])):
             out[-1]=out[-1].rstrip()+" "+l.lstrip()
         else: out.append(l)
     return "\n".join(out)
@@ -20,7 +22,7 @@ def find_choices(lines):
         pat=re.compile(rf"^{L}[\.\)]\s")
         found=None
         for i in range(end-1,-1,-1):
-            if pat.match(lines[i]): found=i; break
+            if pat.match(bare(lines[i])): found=i; break
         if found is None: return None
         idx[L]=found; end=found
     if not (idx["A"]<idx["B"]<idx["C"]<idx["D"]): return None
@@ -34,13 +36,14 @@ def structure(q):
     stem=reflow("\n".join(lines[:idx["A"]]).strip())
     choices=[]
     for i,L in enumerate(LET):
-        seg=" ".join(lines[bounds[i]:bounds[i+1]]).strip()
+        seg=bare(" ".join(lines[bounds[i]:bounds[i+1]])).strip()
         seg=re.sub(rf"^{L}[\.\)]\s*","",seg)
         choices.append(seg.strip())
     if not stem: return None,"empty stem"
     if any(not c for c in choices): return None,"empty choice"
 
     a=q["ans_raw"]
+    a=bare(a)
     m=re.search(r"^Correct Answer:\s*([A-D])\s*$", a, re.M)
     if not m: return None,"no correct answer"
     correct=m.group(1)

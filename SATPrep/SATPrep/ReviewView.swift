@@ -76,7 +76,7 @@ struct ReviewRow: View {
                     .accessibilityLabel("\(progress.streak) of \(masteryStreak) correct in a row")
                 }
             }
-            Text(question.stem)
+            Text(question.plainStem)
                 .font(.subheadline)
                 .lineLimit(3)
                 .foregroundStyle(.primary)
