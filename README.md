@@ -66,6 +66,10 @@ A missed question leaves *Needs work* only after **two correct answers in a row*
 One correct answer is not enough, and missing it again puts it back and resets the
 streak.
 
+Each *Needs work* question is **locked for two weeks** after every attempt: two
+weeks after you miss it, then two weeks after you get it right, and so on. Locked
+rows are dimmed with their unlock date and sit below the ones ready now.
+
 **Finishing the bank starts it over.** Once every question has been answered and
 *Needs work* is empty, the app resets itself automatically and silently — progress,
 stats and bookmarks all clear, and the next question is served as if the app were

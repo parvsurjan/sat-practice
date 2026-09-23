@@ -56,6 +56,21 @@ struct QuestionProgress: Codable, Hashable {
     var lastAnswered: Date?
 
     var isInWrongQueue: Bool { everWrong && !retired }
+
+    /// Days a Needs work question stays locked after each attempt, right or wrong.
+    static let reviewIntervalDays = 14
+
+    /// When a question in the review queue can next be attempted from Review: two weeks
+    /// after it was last answered. Nil when it isn't in the queue.
+    var reviewUnlocksAt: Date? {
+        guard isInWrongQueue, let lastAnswered else { return nil }
+        return Calendar.current.date(byAdding: .day, value: Self.reviewIntervalDays, to: lastAnswered)
+    }
+
+    func isReviewLocked(at now: Date = Date()) -> Bool {
+        guard let unlocks = reviewUnlocksAt else { return false }
+        return now < unlocks
+    }
     var accuracy: Double { seen == 0 ? 0 : Double(correct) / Double(seen) }
 
     /// The single source of truth for the review-queue rules:

@@ -10,7 +10,7 @@ struct ReviewView: View {
     }
 
     private var items: [Question] {
-        section == .needsWork ? store.needsWork : store.bookmarked
+        section == .needsWork ? store.needsWorkByUnlock() : store.bookmarked
     }
 
     var body: some View {
@@ -29,7 +29,7 @@ struct ReviewView: View {
                     Spacer()
                     if section == .needsWork {
                         ContentUnavailableView("Nothing to review", systemImage: "checkmark.circle",
-                            description: Text("Questions you miss land here. Answer one right twice in a row and it graduates out."))
+                            description: Text("Questions you miss land here. Each one unlocks two weeks after you last answered it; get it right twice in a row and it graduates out."))
                     } else {
                         ContentUnavailableView("No bookmarks", systemImage: "bookmark",
                             description: Text("Tap the bookmark icon on any question to save it here."))
@@ -38,11 +38,16 @@ struct ReviewView: View {
                 } else {
                     List {
                         ForEach(items) { q in
-                            NavigationLink {
-                                ReviewQuestionView(question: q)
-                            } label: {
-                                ReviewRow(question: q, progress: store.progress(q.id),
-                                          showStreak: section == .needsWork)
+                            let p = store.progress(q.id)
+                            if section == .needsWork, p.isReviewLocked(), let unlocks = p.reviewUnlocksAt {
+                                ReviewRow(question: q, progress: p, showStreak: true, unlocksAt: unlocks)
+                            } else {
+                                NavigationLink {
+                                    ReviewQuestionView(question: q)
+                                } label: {
+                                    ReviewRow(question: q, progress: p,
+                                              showStreak: section == .needsWork)
+                                }
                             }
                         }
                     }
@@ -58,6 +63,8 @@ struct ReviewRow: View {
     let question: Question
     let progress: QuestionProgress
     let showStreak: Bool
+    /// Set when the question is locked in Needs work; the row is dimmed and shows the unlock date.
+    var unlocksAt: Date? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -81,10 +88,18 @@ struct ReviewRow: View {
                 .font(.subheadline)
                 .lineLimit(3)
                 .foregroundStyle(.primary)
-            Text("\(progress.correct) right · \(progress.wrong) wrong")
-                .font(.caption2).foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Text("\(progress.correct) right · \(progress.wrong) wrong")
+                if let unlocksAt {
+                    Spacer()
+                    Label("Unlocks \(unlocksAt.formatted(.dateTime.month(.abbreviated).day()))",
+                          systemImage: "lock.fill")
+                }
+            }
+            .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
+        .opacity(unlocksAt == nil ? 1 : 0.5)
     }
 }
 
@@ -116,6 +131,14 @@ struct ReviewQuestionView: View {
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(BB.greenWash, in: RoundedRectangle(cornerRadius: BB.cardRadius))
+                } else if submitted, let unlocks = store.progress(question.id).reviewUnlocksAt {
+                    Label("Locked until \(unlocks.formatted(date: .abbreviated, time: .omitted)) — try it again then.",
+                          systemImage: "lock.fill")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(BB.surfaceAlt, in: RoundedRectangle(cornerRadius: BB.cardRadius))
                 }
             }
             .padding()

@@ -160,6 +160,18 @@ final class Store {
         questions.filter { progress($0.id).isInWrongQueue }
     }
 
+    /// Needs work ordered for the Review tab: questions ready now first, then locked ones
+    /// by how soon they unlock.
+    func needsWorkByUnlock(now: Date = Date()) -> [Question] {
+        needsWork.sorted { a, b in
+            let ua = progress(a.id).reviewUnlocksAt ?? .distantPast
+            let ub = progress(b.id).reviewUnlocksAt ?? .distantPast
+            let la = ua > now, lb = ub > now
+            if la != lb { return !la }
+            return la ? ua < ub : false
+        }
+    }
+
     /// Every question missed at least once, matching `filter`. Missing it is permanent
     /// (until reset) even after the question graduates out of Needs work.
     func everMissed(where filter: (Question) -> Bool) -> [Question] {
