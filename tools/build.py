@@ -52,7 +52,7 @@ def structure(q):
     rest=re.split(r"Question Difficulty:\s*\w+", rest)[0].strip()
     expl=reflow(rest)
     if not expl: return None,"empty explanation"
-    return dict(id=q["id"], difficulty=q["difficulty"],
+    return dict(id=q["id"], exam=q["exam"], difficulty=q["difficulty"],
                 domain=q["meta"].get("domain","Unknown"),
                 skill=re.sub(r"Cross-text","Cross-Text",q["meta"].get("skill","Unknown")),
                 stem=stem, choices=choices, correct=LET.index(correct),

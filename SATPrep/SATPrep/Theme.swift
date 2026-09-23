@@ -22,6 +22,10 @@ enum BB {
     static let surface     = Color.white
     static let surfaceAlt  = Color(hex: 0xF5F6F8)
 
+    // Test accents: SAT and PSAT badges must read apart at a glance.
+    static let sat         = Color(hex: 0x1B2A78)
+    static let psat        = Color(hex: 0x6A3D9A)
+
     // Difficulty accents.
     static let easy        = Color(hex: 0x156B3F)
     static let medium      = Color(hex: 0x8A5A00)

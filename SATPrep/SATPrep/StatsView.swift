@@ -11,8 +11,14 @@ private struct Bucket: Identifiable {
 struct StatsView: View {
     @Environment(Store.self) private var store
     @State private var confirmReset = false
+    /// nil shows both tests together.
+    @State private var scope: Exam?
 
-    private var history: [AnswerEvent] { store.save.history }
+    private var history: [AnswerEvent] {
+        guard let scope else { return store.save.history }
+        return store.save.history.filter { $0.exam == scope }
+    }
+    private func inScope(_ q: Question) -> Bool { scope == nil || q.exam == scope }
 
     private func bucket(_ key: (AnswerEvent) -> String) -> [Bucket] {
         var map: [String: Bucket] = [:]
@@ -29,13 +35,23 @@ struct StatsView: View {
     private var answered: Int { history.count }
     private var correct: Int { history.filter(\.wasCorrect).count }
     private var overall: Double { answered == 0 ? 0 : Double(correct) / Double(answered) }
-    private var uniqueSeen: Int { store.save.progress.values.filter { $0.seen > 0 }.count }
+    private var bank: [Question] { store.questions.filter(inScope) }
+    private var uniqueSeen: Int { bank.filter { store.progress($0.id).seen > 0 }.count }
 
     var body: some View {
         NavigationStack {
-            Group {
+            VStack(spacing: 0) {
+                if !store.save.history.isEmpty {
+                    Picker("Test", selection: $scope) {
+                        Text("All").tag(Exam?.none)
+                        ForEach(Exam.allCases) { Text($0.rawValue).tag(Exam?.some($0)) }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal).padding(.bottom, 8)
+                }
                 if answered == 0 {
-                    ContentUnavailableView("No stats yet", systemImage: "chart.bar",
+                    ContentUnavailableView(scope.map { "No \($0.rawValue) stats yet" } ?? "No stats yet",
+                        systemImage: "chart.bar",
                         description: Text("Answer a few questions and your strengths and weak spots show up here."))
                 } else {
                     List {
@@ -43,39 +59,45 @@ struct StatsView: View {
                             HStack(spacing: 12) {
                                 StatTile(value: "\(Int(overall * 100))%", label: "Accuracy")
                                 StatTile(value: "\(answered)", label: "Answered")
-                                StatTile(value: "\(store.needsWork.count)", label: "Needs work")
+                                StatTile(value: "\(store.needsWork.filter(inScope).count)", label: "Needs work")
                             }
                             .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
                             NavigationLink {
-                                MissedListView(title: "All missed", questions: store.everMissed { _ in true })
+                                MissedListView(title: "All missed", questions: store.everMissed(where: inScope))
                             } label: {
                                 HStack {
                                     Text("All missed questions").font(.subheadline)
                                     Spacer()
-                                    Text("\(store.everMissed { _ in true }.count)")
+                                    Text("\(store.everMissed(where: inScope).count)")
                                         .font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
                                 }
                             }
                             HStack {
                                 Text("Question bank covered").font(.subheadline)
                                 Spacer()
-                                Text("\(uniqueSeen) of \(store.questions.count)")
+                                Text("\(uniqueSeen) of \(bank.count)")
                                     .font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
                             }
                         }
 
+                        if scope == nil {
+                            BucketSection(title: "By test",
+                                          match: { name, q in q.exam.rawValue == name },
+                                          buckets: bucket(\.exam.rawValue).sorted { $0.name > $1.name })
+                        }
+
                         BucketSection(title: "By difficulty",
-                                      match: { name, q in q.difficulty.rawValue == name },
+                                      match: { name, q in inScope(q) && q.difficulty.rawValue == name },
                                       buckets: bucket(\.difficulty.rawValue)
                                         .sorted { (Difficulty(rawValue: $0.name)?.sortOrder ?? 0)
                                                 < (Difficulty(rawValue: $1.name)?.sortOrder ?? 0) })
 
                         BucketSection(title: "By category",
-                                      match: { name, q in q.domain == name },
+                                      match: { name, q in inScope(q) && q.domain == name },
                                       buckets: bucket(\.domain).sorted { $0.accuracy < $1.accuracy })
 
                         BucketSection(title: "By skill — weakest first",
-                                      match: { name, q in q.skill == name },
+                                      match: { name, q in inScope(q) && q.skill == name },
                                       buckets: bucket(\.skill).sorted { $0.accuracy < $1.accuracy })
 
                         Section {

@@ -1,12 +1,19 @@
 # SATPrep
 
-A standalone iOS app for SAT Reading & Writing practice, built from the three
+A standalone iOS app for SAT and PSAT Reading & Writing practice, built from the six
 question PDFs in this repo. No network, no accounts — everything ships in the bundle
 and all progress stays on the device.
 
-**1,845 questions** (611 easy · 624 medium · 610 hard), each with answer choices,
-the correct answer, the official rationale, difficulty, domain and skill.
-**133 questions include a chart or table**, rendered from the PDFs as images.
+**3,689 questions**, each with answer choices, the correct answer, the official
+rationale, test, difficulty, domain and skill:
+
+| Test | Easy | Medium | Hard | Total |
+|------|-----:|-------:|-----:|------:|
+| SAT  | 611  | 624    | 610  | 1,845 |
+| PSAT | 300  | 664    | 880  | 1,844 |
+
+**265 questions include a chart or table**, rendered from the PDFs as images.
+PSAT covers the PSAT/NMSQT and PSAT 10 bank.
 
 ## Deploying to your phone
 
@@ -41,7 +48,8 @@ drawn for.
 ## The three screens
 
 **Practice** — one question at a time, drawn from the whole bank with unseen
-questions first. Difficulty, domain and skill are shown up front. Tap a choice to
+questions first. The menu at the top left picks **SAT**, **PSAT** or both. Every
+question carries an SAT or PSAT badge next to its difficulty, domain and skill. Tap a choice to
 select it, tap it again to clear it, then commit with **Submit answer** in the
 pinned bottom bar — nothing is recorded until you submit. The correct choice, your
 choice and the full rationale then appear, and the button becomes **Next question**.
@@ -64,8 +72,14 @@ stats and bookmarks all clear, and the next question is served as if the app wer
 new. Practice never runs out.
 
 **Stats** — overall accuracy, questions answered, how much of the bank you have
-covered, and accuracy broken down by difficulty, by category, and by skill.
+covered, and accuracy broken down by test, by difficulty, by category, and by skill.
+The **All / SAT / PSAT** switch at the top limits every figure to one test.
 The skill list is sorted weakest-first, so your soft spots are at the top.
+
+**Question of the Day reminder** — the first time you open the app each day, it
+asks whether you have done the College Board's SAT Question of the Day. It stays up
+until you answer **Yes, done** or **Not yet**. If you close the app without
+answering, it asks again next time.
 
 ## Layout
 
@@ -82,8 +96,8 @@ SATPrep/
     ReviewView.swift      Review tab (needs work / bookmarked)
     StatsView.swift       Stats tab
     Resources/
-      questions.json      all 1,845 questions
-      figures/            133 chart and table images
+      questions.json      all 3,689 questions
+      figures/            265 chart and table images
 ```
 
 Progress is written to JSON in Application Support, independent of the question
@@ -92,7 +106,10 @@ clears it deliberately, and finishing the whole bank clears it automatically.
 
 ## Regenerating the question data
 
-`tools/extract.py` and `tools/build.py` parse the PDFs; `tools/crop.py` trims the
+`tools/extract.py` and `tools/build.py` parse the PDFs (`{easy,medium,hard}-questions.pdf`
+for SAT, `{easy,medium,hard}-psat-questions.pdf` for PSAT). The extractor detects both
+question-bank export layouts: the older one with a separate answer page, and the newer
+one with a metadata table under `Question ID: <id>`. `tools/crop.py` trims the
 figure images. They need `pymupdf` and `pillow`:
 
 ```sh

@@ -19,6 +19,18 @@ struct DifficultyBadge: View {
     }
 }
 
+struct ExamBadge: View {
+    let exam: Exam
+    var body: some View {
+        Text(exam.rawValue)
+            .font(.system(size: 11, weight: .bold))
+            .tracking(0.4)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(exam == .sat ? BB.sat : BB.psat, in: RoundedRectangle(cornerRadius: 4))
+            .foregroundStyle(.white)
+    }
+}
+
 struct TagBadge: View {
     let text: String
     var body: some View {
@@ -243,6 +255,7 @@ struct QuestionCard: View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
+                    ExamBadge(exam: question.exam)
                     DifficultyBadge(difficulty: question.difficulty)
                     TagBadge(text: question.skill)
                     Spacer(minLength: 4)

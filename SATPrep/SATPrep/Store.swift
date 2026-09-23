@@ -123,6 +123,7 @@ final class Store {
         p.apply(correct: right, masteryStreak: masteryStreak)
         save.progress[question.id] = p
         save.history.append(AnswerEvent(questionID: question.id, wasCorrect: right, date: Date(),
+                                        exam: question.exam,
                                         difficulty: question.difficulty, domain: question.domain,
                                         skill: question.skill))
         persist()
@@ -166,8 +167,10 @@ final class Store {
     }
 
     /// A question to practise next, honouring the filters and preferring unseen questions.
-    func nextQuestion(difficulties: Set<Difficulty>, domains: Set<String>, excluding: String?) -> Question? {
+    func nextQuestion(exams: Set<Exam> = [], difficulties: Set<Difficulty>, domains: Set<String>,
+                      excluding: String?) -> Question? {
         var pool = questions.filter {
+            (exams.isEmpty || exams.contains($0.exam)) &&
             (difficulties.isEmpty || difficulties.contains($0.difficulty)) &&
             (domains.isEmpty || domains.contains($0.domain))
         }

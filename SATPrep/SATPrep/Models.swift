@@ -6,9 +6,16 @@ enum Difficulty: String, Codable, CaseIterable, Identifiable, Hashable {
     var sortOrder: Int { self == .easy ? 0 : (self == .medium ? 1 : 2) }
 }
 
-/// One SAT question as extracted from the source PDFs.
+/// Which test a question bank came from. PSAT here covers PSAT/NMSQT and PSAT 10.
+enum Exam: String, Codable, CaseIterable, Identifiable, Hashable {
+    case sat = "SAT", psat = "PSAT"
+    var id: String { rawValue }
+}
+
+/// One SAT or PSAT question as extracted from the source PDFs.
 struct Question: Codable, Identifiable, Hashable {
     let id: String
+    let exam: Exam
     let difficulty: Difficulty
     let domain: String
     let skill: String
@@ -75,9 +82,22 @@ struct AnswerEvent: Codable, Hashable, Identifiable {
     let questionID: String
     let wasCorrect: Bool
     let date: Date
+    /// Missing from history recorded before PSAT questions existed, which was all SAT.
+    private let examRaw: Exam?
+    var exam: Exam { examRaw ?? .sat }
     let difficulty: Difficulty
     let domain: String
     let skill: String
+
+    init(questionID: String, wasCorrect: Bool, date: Date, exam: Exam,
+         difficulty: Difficulty, domain: String, skill: String) {
+        self.questionID = questionID; self.wasCorrect = wasCorrect; self.date = date
+        self.examRaw = exam; self.difficulty = difficulty; self.domain = domain; self.skill = skill
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, questionID, wasCorrect, date, examRaw = "exam", difficulty, domain, skill
+    }
 }
 
 /// Everything persisted to disk.

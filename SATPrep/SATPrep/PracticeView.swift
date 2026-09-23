@@ -7,6 +7,8 @@ struct PracticeView: View {
     @State private var selection: Int?
     @State private var submitted = false
     @State private var showFilters = false
+    /// "" practises both tests; otherwise an `Exam` raw value.
+    @AppStorage("practiceExam") private var examRaw = ""
     @AppStorage("filterDifficulties") private var difficultiesRaw = ""
     @AppStorage("filterDomains") private var domainsRaw = ""
 
@@ -16,6 +18,7 @@ struct PracticeView: View {
     private var domains: Set<String> {
         Set(domainsRaw.split(separator: "|").map(String.init))
     }
+    private var exams: Set<Exam> { Exam(rawValue: examRaw).map { [$0] } ?? [] }
 
     var body: some View {
         NavigationStack {
@@ -56,6 +59,21 @@ struct PracticeView: View {
             }
             .navigationTitle("Practice")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Picker("Test", selection: $examRaw) {
+                            Text("SAT and PSAT").tag("")
+                            ForEach(Exam.allCases) { Text($0.rawValue).tag($0.rawValue) }
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Text(examRaw.isEmpty ? "SAT + PSAT" : examRaw)
+                                .font(.system(size: 15, weight: .semibold))
+                            Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
+                        }
+                    }
+                    .accessibilityLabel("Test: \(examRaw.isEmpty ? "SAT and PSAT" : examRaw)")
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showFilters = true } label: {
                         Image(systemName: difficulties.isEmpty && domains.isEmpty
@@ -68,6 +86,7 @@ struct PracticeView: View {
                 FilterSheet(difficultiesRaw: $difficultiesRaw, domainsRaw: $domainsRaw)
                     .presentationDetents([.medium, .large])
             }
+            .onChange(of: examRaw) { advance() }
             .onChange(of: difficultiesRaw) { advance() }
             .onChange(of: domainsRaw) { advance() }
             .onAppear { if current == nil { advance() } }
@@ -96,7 +115,7 @@ struct PracticeView: View {
             return
         }
         #endif
-        current = store.nextQuestion(difficulties: difficulties, domains: domains,
+        current = store.nextQuestion(exams: exams, difficulties: difficulties, domains: domains,
                                      excluding: current?.id)
     }
 }

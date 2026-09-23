@@ -62,6 +62,7 @@ struct ReviewRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
+                ExamBadge(exam: question.exam)
                 DifficultyBadge(difficulty: question.difficulty)
                 TagBadge(text: question.skill)
                 Spacer()

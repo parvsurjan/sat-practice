@@ -1,7 +1,7 @@
 import pymupdf, re, json, os
 SRC=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 R=pymupdf.Rect
-MARKER=re.compile(r"^(Question ID \w+|ID: \w+( Answer)?|Correct Answer:|Rationale|Question Difficulty:)")
+MARKER=re.compile(r"^(Question ID:? \w+|ID: \w+( Answer)?|Correct Answer:|Rationale|Question Difficulty:|Question$|Answer$)")
 
 def text_lines(page):
     out=[]
@@ -70,7 +70,7 @@ def delimiters(page, cut):
             out.append((br.y0,br.y1))
     return out
 
-def figure_bands(page, cut):
+def figure_bands(page, cut, pad=8):
     lines=text_lines(page)
     cand=[]; allr=[]
     for dr in page.get_drawings():
@@ -104,7 +104,7 @@ def figure_bands(page, cut):
         above=[d1 for d0,d1 in dels if d1 <= bb.y0+2]
         below=[d0 for d0,d1 in dels if d0 >= bb.y1-2]
         # Prefer the prose gap, but never clip the figure's own geometry ...
-        y0=min(max([top_lim]+above)+8, bb.y0-3)
+        y0=min(max([top_lim]+above)+pad, bb.y0-3)
         y1=max((min(below)-2) if below else page.rect.y1-8, bb.y1+1.5)
         # ... and never let that clamp reach into the neighbouring prose either.
         if above: y0=max(y0, max(above)+0.5)
@@ -124,7 +124,7 @@ def underline_rects(page):
     return [R(d["rect"]) for d in page.get_drawings()
             if R(d["rect"]).height<=2.0 and R(d["rect"]).width>3]
 
-def marked_line_text(ln, uls):
+def marked_line_text(ln, uls, min_space=0.0):
     """Line text with UL_ON/UL_OFF around characters that sit on a drawn underline.
 
     The PDFs draw an underlined phrase as a thin rectangle just under the text, not as a
@@ -134,6 +134,7 @@ def marked_line_text(ln, uls):
     for sp in ln["spans"]:
         for ch in sp["chars"]:
             c=R(ch["bbox"]); mid=(c.x0+c.x1)/2
+            if ch["c"]==" " and c.width<min_space: continue   # kerning artefact, e.g. "ar t"
             u = ch["c"].strip()!="" or on   # spaces only continue an open run
             hit = u and any(r.x0-1<=mid<=r.x1+1 and (c.y0+c.y1)/2<=r.y0<=c.y1+4 for r in uls)
             if hit and not on: out.append(UL_ON); on=True
@@ -146,14 +147,14 @@ def marked_line_text(ln, uls):
     s=re.sub(r"(\s+)"+UL_OFF, UL_OFF+r"\1", s)
     return s.replace(UL_ON+UL_OFF,"")
 
-def page_paragraphs(page, cut, bands, qid):
+def page_paragraphs(page, cut, bands, qid, min_space=0.0):
     """Reconstruct paragraphs: merge visual lines (incl. superscripts), join wrapped lines."""
     frags=[]
     uls=underline_rects(page)
     for bi,blk in enumerate(page.get_text("rawdict")["blocks"]):
         if blk["type"]!=0: continue
         for ln in blk["lines"]:
-            r=R(ln["bbox"]); txt=marked_line_text(ln, uls)
+            r=R(ln["bbox"]); txt=marked_line_text(ln, uls, min_space)
             if not txt.strip() or r.get_area()<=0: continue
             frags.append({"bi":bi,"r":r,"t":txt})
     frags.sort(key=lambda f:(f["r"].y0,f["r"].x0))
@@ -223,11 +224,74 @@ def parse_pdf(fname, difficulty, outdir, scale=3):
                        stem_raw=jb(parts[:si]),ans_raw=jb(parts[si+1:])))
     return qs,warn
 
+def label_bottom(page, label):
+    for b in page.get_text("blocks"):
+        if b[6]==0 and b[4].strip()==label: return b[3]
+    return None
+
+def parse_pdf_table_header(fname, difficulty, outdir, scale=3):
+    """The newer question-bank export: a metadata table under "Question ID: <id>", then
+    "Question", "Answer", "Correct Answer: X" and "Rationale" labels, and no answer page.
+
+    Produces the same raw records as parse_pdf so build.py treats both alike.
+    """
+    doc=pymupdf.open(f"{SRC}/{fname}")
+    starts=[i for i,p in enumerate(doc) if re.match(r"^Question ID: (\w+)", p.get_text())]
+    qs=[]; warn=[]
+    for qi,sp in enumerate(starts):
+        ep = starts[qi+1]-1 if qi+1<len(starts) else len(doc)-1
+        qid=re.match(r"^Question ID: (\w+)", doc[sp].get_text()).group(1)
+        meta={}; parts=[]; figs=[]
+        for pno in range(sp,ep+1):
+            page=doc[pno]; is_start=(pno==sp)
+            cut=8.0
+            if is_start:
+                cut=(label_bottom(page,"Question") or 140.0)+1
+                # header cells share a block across columns, so match on lines
+                hdr=[(R(ln["bbox"]),clean("".join(sp["text"] for sp in ln["spans"])))
+                     for blk in page.get_text("dict")["blocks"] if blk["type"]==0
+                     for ln in blk["lines"] if ln["bbox"][3]<=cut]
+                for label,key in (("Test","test"),("Domain","domain"),("Skill","skill")):
+                    lb=next((r for r,t in hdr if t==label), None)
+                    if lb is None: continue
+                    vals=[(r,t) for r,t in hdr if abs(r.x0-lb.x0)<6 and r.y0>lb.y1 and t]
+                    if vals: meta[key]=" ".join(t for r,t in sorted(vals,key=lambda v:v[0].y0))
+            bands=figure_bands(page,cut,pad=2)   # titles sit tight under the "Question" label
+            for fr in bands:
+                if fr.height>640: warn.append((qid,"tall band",round(fr.height)))
+                pix=page.get_pixmap(clip=fr, matrix=pymupdf.Matrix(scale,scale))
+                name=f"{qid}_{len(figs)}.png"; pix.save(os.path.join(outdir,name))
+                figs.append({"file":name,"page":pno,"y":float(fr.y0),"w":pix.width,"h":pix.height})
+            # every visual line is its own block here, so rebuild paragraphs from line pitch
+            # (indented lines are bullet points in notes, one paragraph each)
+            last=None
+            for y,x,t in sorted(page_paragraphs(page, cut, bands, qid, min_space=1.0)):
+                if last is not None and y-last<=17 and x<=30 and abs(x-parts[-1][2])<=2 \
+                        and not MARKER.match(t) and not MARKER.match(parts[-1][3]) \
+                        and not re.match(r"^[A-D]\. ",t):
+                    parts[-1]=parts[-1][:3]+(parts[-1][3]+" "+t,)
+                else:
+                    parts.append((pno,y,x,t))
+                last=y
+        parts.sort()
+        si=next((i for i,p in enumerate(parts) if re.match(r"^Correct Answer:",p[3].strip())),None)
+        if si is None: warn.append((qid,"no correct answer")); continue
+        jb=lambda ps:"\n".join(clean(p[3]) for p in ps if clean(p[3]) and clean(p[3])!="Answer")
+        qs.append(dict(id=qid,difficulty=difficulty,meta=meta,figs=figs,
+                       stem_raw=jb(parts[:si]),ans_raw=jb(parts[si:])))
+    return qs,warn
+
 if __name__=="__main__":
     out="figures_raw"; os.makedirs(out,exist_ok=True)
     allq=[]; W=[]
-    for fn,diff in [("easy-questions.pdf","Easy"),("medium-questions.pdf","Medium"),("hard-questions.pdf","Hard")]:
-        qs,w=parse_pdf(fn,diff,out); print(diff,len(qs),"warn",len(w)); allq+=qs; W+=w
+    for exam,pre in (("SAT",""),("PSAT","psat-")):
+        for diff in ("Easy","Medium","Hard"):
+            fn=f"{diff.lower()}-{pre}questions.pdf"
+            # the PDFs come in two export layouts; the newer one opens with "Question ID: <id>"
+            newer=pymupdf.open(f"{SRC}/{fn}")[0].get_text().startswith("Question ID:")
+            qs,w=(parse_pdf_table_header if newer else parse_pdf)(fn,diff,out)
+            for q in qs: q["exam"]=exam
+            print(exam,diff,len(qs),"warn",len(w)); allq+=qs; W+=w
     json.dump(allq,open("raw.json","w"),indent=1)
     print("total",len(allq),"qs w/figs",sum(1 for q in allq if q["figs"]),"files",len(os.listdir(out)))
     for x in W[:20]: print("WARN",x)
