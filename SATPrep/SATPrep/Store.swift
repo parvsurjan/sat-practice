@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import WidgetKit
 
 /// Number of consecutive correct answers needed to retire a previously-missed question.
 let masteryStreak = 2
@@ -127,6 +128,8 @@ final class Store {
                                         difficulty: question.difficulty, domain: question.domain,
                                         skill: question.skill))
         persist()
+        DailyProgress.recordAnswer()
+        WidgetCenter.shared.reloadTimelines(ofKind: "SATPrepWidget")
         resetIfCycleComplete()
     }
 

@@ -52,6 +52,10 @@ struct SATPrepApp: App {
             } message: {
                 Text("Have you completed today's SAT Question of the Day?")
             }
+            // Tapping the Lock Screen widget opens the app straight to Practice.
+            .onOpenURL { url in
+                if url.host == "practice" { tab = 0 }
+            }
         }
     }
 }
