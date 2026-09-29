@@ -4,6 +4,10 @@ A standalone iOS app for SAT and PSAT Reading & Writing practice, built from the
 question PDFs in this repo. No network, no accounts — everything ships in the bundle
 and all progress stays on the device.
 
+**Try it in the browser:** [parvsurjan.github.io/sat-practice](https://parvsurjan.github.io/sat-practice/)
+— a web version of the Practice/Review/Stats flow (`docs/`), no install needed.
+Progress there is saved per-browser via `localStorage`.
+
 **3,689 questions**, each with answer choices, the correct answer, the official
 rationale, test, difficulty, domain and skill:
 
