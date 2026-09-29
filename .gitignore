@@ -6,3 +6,13 @@ DerivedData/
 xcuserdata/
 __pycache__/
 *.pyc
+venv/
+
+# Math question pipeline: large source PDFs and intermediate build output.
+# Only the processed docs/data/math-questions.json + math-figures/ are committed.
+sat-math-all.pdf
+psat-math-all.pdf
+figures_raw_math/
+math-raw.json
+extract_math.log
+build_math.log

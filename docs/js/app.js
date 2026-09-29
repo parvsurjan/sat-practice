@@ -13,8 +13,13 @@ const Store = {
   save: { progress: {}, history: [] },
 
   async loadQuestions() {
-    const res = await fetch('data/questions.json');
-    this.questions = await res.json();
+    const [rw, math] = await Promise.all([
+      fetch('data/questions.json').then(r => r.json()),
+      fetch('data/math-questions.json').then(r => r.ok ? r.json() : []).catch(() => [])
+    ]);
+    for (const q of rw) q.section = 'rw';
+    for (const q of math) q.section = 'math';
+    this.questions = rw.concat(math);
     this.byID = {};
     for (const q of this.questions) this.byID[q.id] = q;
   },
@@ -61,8 +66,11 @@ const Store = {
   },
 
   record(question, chosenIndex) {
+    return this.recordResult(question, chosenIndex === question.correct);
+  },
+
+  recordResult(question, right) {
     const p = this.progress(question.id);
-    const right = chosenIndex === question.correct;
     p.seen += 1;
     p.lastAnswered = new Date().toISOString();
     if (right) {
@@ -129,9 +137,10 @@ const Store = {
     return this.questions.filter(q => this.progress(q.id).everWrong && filterFn(q));
   },
 
-  nextQuestion({ exams = new Set(), difficulties = new Set(), domains = new Set(), excluding = null }) {
+  nextQuestion({ exams = new Set(), sections = new Set(), difficulties = new Set(), domains = new Set(), excluding = null }) {
     let pool = this.questions.filter(q =>
       (exams.size === 0 || exams.has(q.exam)) &&
+      (sections.size === 0 || sections.has(q.section)) &&
       (difficulties.size === 0 || difficulties.has(q.difficulty)) &&
       (domains.size === 0 || domains.has(q.domain))
     );
@@ -218,6 +227,43 @@ function fmtLongDate(d) {
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
+function mathImg(file) { return `data/math-figures/${encodeURIComponent(file)}`; }
+
+function mathImagesHtml(files, cls) {
+  return (files || []).map(f =>
+    `<img class="${cls}" src="${mathImg(f)}" loading="lazy" alt="">`
+  ).join('');
+}
+
+/** Loose equivalence for student-produced-response answers: exact string match
+ *  (after trimming whitespace) or numeric match within a small tolerance, since
+ *  College Board lists accepted answers as fractions, decimals, or both. */
+function sprAnswerMatches(entered, accepted) {
+  const norm = s => s.replace(/\s+/g, '');
+  const e = norm(entered);
+  if (!e) return false;
+  if (accepted.some(a => norm(a) === e)) return true;
+  const toNum = s => {
+    const m = s.match(/^-?\d+\/\d+$/);
+    if (m) { const [n, d] = s.split('/').map(Number); return d ? n / d : NaN; }
+    return Number(s);
+  };
+  const eNum = toNum(e);
+  if (Number.isNaN(eNum)) return false;
+  return accepted.some(a => {
+    const aNum = toNum(norm(a));
+    return !Number.isNaN(aNum) && Math.abs(aNum - eNum) < 0.01;
+  });
+}
+
+function questionPreviewHtml(q) {
+  if (q.section === 'math') {
+    const first = (q.stemImages || [])[0];
+    return first ? `<img class="list-row-thumb" src="${mathImg(first)}" loading="lazy" alt="">` : '';
+  }
+  return `<div class="list-row-stem">${escapeHtml(stripUnderlineMarkers(q.stem))}</div>`;
+}
+
 function openZoom(src) {
   const root = document.getElementById('modal-root');
   const div = document.createElement('div');
@@ -244,8 +290,10 @@ function openZoom(src) {
  * }
  */
 function mountQuestionScreen(mount, question, config) {
+  const isMath = question.section === 'math';
+  const isSpr = isMath && question.type === 'spr';
   const state = {
-    selection: null,
+    selection: null,       // choice index (mc) or typed string (spr)
     submitted: false,
     crossOutEnabled: false,
     crossedOut: new Set(),
@@ -257,6 +305,57 @@ function mountQuestionScreen(mount, question, config) {
     if (i === question.correct) return 'correct';
     if (i === state.selection) return 'wrong';
     return 'idle';
+  }
+
+  function hasSelection() {
+    return isSpr ? !!(state.selection && state.selection.trim()) : state.selection !== null;
+  }
+
+  function bodyHtml() {
+    if (isMath) {
+      let html = mathImagesHtml(question.stemImages, 'stem-img');
+      if (isSpr) {
+        html += `<div class="spr-row">
+          <input type="text" class="spr-input" data-action="spr-input" placeholder="Enter your answer"
+                 value="${escapeHtml(state.selection || '')}" ${state.submitted ? 'disabled' : ''}>
+        </div>`;
+      } else {
+        html += `<div class="choices">
+          ${(question.choiceImages || []).map((files, i) => {
+            const st = choiceState(i);
+            const crossed = state.crossedOut.has(i);
+            const showAbc = state.crossOutEnabled && !state.submitted;
+            return `<div class="choice-row ${st}">
+              <button class="choice-main" data-action="select" data-index="${i}">
+                <span class="choice-letter">${letterOf(i)}</span>
+                <span class="choice-text choice-text-img ${crossed ? 'crossed' : ''}">${mathImagesHtml(files, 'choice-img')}</span>
+                ${st === 'correct' ? '<span class="choice-result-icon correct">✓</span>' : ''}
+                ${st === 'wrong' ? '<span class="choice-result-icon wrong">✕</span>' : ''}
+              </button>
+              ${showAbc ? `<button class="choice-abc ${crossed ? 'crossed-off' : ''}" data-action="crossout" data-index="${i}">${crossed ? 'Undo' : 'ABC'}</button>` : ''}
+            </div>`;
+          }).join('')}
+        </div>`;
+      }
+      return html;
+    }
+    return `${figuresHtml(question.figures || [])}${stemHtml(question.stem)}
+      <div class="choices">
+        ${question.choices.map((c, i) => {
+          const st = choiceState(i);
+          const crossed = state.crossedOut.has(i);
+          const showAbc = state.crossOutEnabled && !state.submitted;
+          return `<div class="choice-row ${st}">
+            <button class="choice-main" data-action="select" data-index="${i}">
+              <span class="choice-letter">${letterOf(i)}</span>
+              <span class="choice-text ${crossed ? 'crossed' : ''}">${escapeHtml(c)}</span>
+              ${st === 'correct' ? '<span class="choice-result-icon correct">✓</span>' : ''}
+              ${st === 'wrong' ? '<span class="choice-result-icon wrong">✕</span>' : ''}
+            </button>
+            ${showAbc ? `<button class="choice-abc ${crossed ? 'crossed-off' : ''}" data-action="crossout" data-index="${i}">${crossed ? 'Undo' : 'ABC'}</button>` : ''}
+          </div>`;
+        }).join('')}
+      </div>`;
   }
 
   function render() {
@@ -273,54 +372,45 @@ function mountQuestionScreen(mount, question, config) {
           <button class="q-tool-btn ${p.bookmarked ? 'active' : ''}" data-action="bookmark" ${config.allowBookmark ? '' : 'disabled style="visibility:hidden"'}>
             <span class="bm-icon">${p.bookmarked ? '🔖' : '📑'}</span> Mark for Review
           </button>
-          <button class="abc-btn ${state.crossOutEnabled ? 'active' : ''}" data-action="abc-toggle">ABC</button>
+          ${isSpr ? '' : `<button class="abc-btn ${state.crossOutEnabled ? 'active' : ''}" data-action="abc-toggle">ABC</button>`}
         </div>
         <div class="q-domain">${escapeHtml(question.domain)}</div>
       </div>
       <hr class="divider">
-      ${figuresHtml(question.figures || [])}
-      ${stemHtml(question.stem)}
-      <div class="choices">
-        ${question.choices.map((c, i) => {
-          const st = choiceState(i);
-          const crossed = state.crossedOut.has(i);
-          const showAbc = state.crossOutEnabled && !state.submitted;
-          return `<div class="choice-row ${st}">
-            <button class="choice-main" data-action="select" data-index="${i}">
-              <span class="choice-letter">${letterOf(i)}</span>
-              <span class="choice-text ${crossed ? 'crossed' : ''}">${escapeHtml(c)}</span>
-              ${st === 'correct' ? '<span class="choice-result-icon correct">✓</span>' : ''}
-              ${st === 'wrong' ? '<span class="choice-result-icon wrong">✕</span>' : ''}
-            </button>
-            ${showAbc ? `<button class="choice-abc ${crossed ? 'crossed-off' : ''}" data-action="crossout" data-index="${i}">${crossed ? 'Undo' : 'ABC'}</button>` : ''}
-          </div>`;
-        }).join('')}
-      </div>
-      ${state.submitted && state.selection !== null ? resultPanelHtml(question, state.selection) : ''}
+      ${bodyHtml()}
+      ${state.submitted ? resultPanelHtml(question) : ''}
     </div>`;
 
     if (state.extraBanner) html += state.extraBanner;
 
     html += `<div class="answer-bar">
-      <button class="answer-bar-btn ${state.submitted || state.selection !== null ? 'enabled' : ''}" data-action="${state.submitted ? 'next' : 'submit'}">
+      <button class="answer-bar-btn ${state.submitted || hasSelection() ? 'enabled' : ''}" data-action="${state.submitted ? 'next' : 'submit'}">
         ${state.submitted ? config.nextLabel : config.submitLabel}
       </button>
     </div>`;
 
     mount.innerHTML = html;
+    if (isSpr && !state.submitted) {
+      const input = mount.querySelector('.spr-input');
+      if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+    }
   }
 
-  function resultPanelHtml(q, chosen) {
-    const right = chosen === q.correct;
+  function resultPanelHtml(q) {
+    const right = state.wasCorrect;
+    const answerLabel = isMath
+      ? (q.type === 'mc' ? letterOf(q.correct) : q.correctAnswers.join(' or '))
+      : letterOf(q.correct);
     return `<div class="result-panel ${right ? 'right' : 'wrong'}">
       <div class="result-head">
         <span>${right ? '✅' : '❌'}</span>
         <span class="result-title">${right ? 'Correct' : 'Incorrect'}</span>
-        <span class="result-correct-answer">Correct answer: ${letterOf(q.correct)}</span>
+        <span class="result-correct-answer">Correct answer: ${answerLabel}</span>
       </div>
       <hr class="divider">
       <div class="rationale-label">RATIONALE</div>
-      <div class="rationale-text">${escapeHtml(q.explanation)}</div>
+      ${isMath ? `<div class="rationale-imgs">${mathImagesHtml(q.rationaleImages, 'rationale-img')}</div>`
+               : `<div class="rationale-text">${escapeHtml(q.explanation)}</div>`}
     </div>`;
   }
 
@@ -354,14 +444,16 @@ function mountQuestionScreen(mount, question, config) {
       return;
     }
     if (action === 'submit') {
-      if (state.selection === null || state.submitted) return;
+      if (!hasSelection() || state.submitted) return;
       state.submitted = true;
       const before = config.captureBefore ? config.captureBefore() : null;
-      let wasCorrect;
+      const wasCorrect = isSpr
+        ? sprAnswerMatches(state.selection, question.correctAnswers)
+        : state.selection === question.correct;
+      state.wasCorrect = wasCorrect;
       if (config.recordAnswer) {
-        wasCorrect = Store.record(question, state.selection);
-      } else {
-        wasCorrect = state.selection === question.correct;
+        if (isSpr) Store.recordResult(question, wasCorrect);
+        else Store.record(question, state.selection);
       }
       if (config.afterSubmit) state.extraBanner = config.afterSubmit(before, question, wasCorrect);
       render();
@@ -373,6 +465,20 @@ function mountQuestionScreen(mount, question, config) {
     }
   });
 
+  mount.addEventListener('input', (e) => {
+    if (e.target.dataset.action === 'spr-input') {
+      state.selection = e.target.value;
+      const btn = mount.querySelector('.answer-bar-btn');
+      if (btn) btn.classList.toggle('enabled', hasSelection());
+    }
+  });
+
+  mount.addEventListener('keydown', (e) => {
+    if (e.target.dataset && e.target.dataset.action === 'spr-input' && e.key === 'Enter' && hasSelection()) {
+      mount.querySelector('.answer-bar-btn')?.click();
+    }
+  });
+
   render();
 }
 
@@ -380,13 +486,15 @@ function mountQuestionScreen(mount, question, config) {
 
 const App = {
   tab: 'practice',
-  filters: { exam: '', difficulties: [], domains: [] },
+  filters: { exam: '', section: '', difficulties: [], domains: [] },
   examMenuOpen: false,
+  sectionMenuOpen: false,
   filterSheetOpen: false,
   practiceCurrentId: null,
   reviewSection: 'needsWork',
   statsScope: null,          // null | 'SAT' | 'PSAT'
-  statsSubview: null         // null | { title, questions }
+  statsSubview: null,        // null | { title, questions }
+  searchQuery: ''
 };
 
 function loadFilters() {
@@ -401,6 +509,9 @@ function saveFilters() {
 
 function activeExamsSet() {
   return App.filters.exam ? new Set([App.filters.exam]) : new Set();
+}
+function activeSectionsSet() {
+  return App.filters.section ? new Set([App.filters.section]) : new Set();
 }
 function activeDifficultiesSet() { return new Set(App.filters.difficulties); }
 function activeDomainsSet() { return new Set(App.filters.domains); }
@@ -430,6 +541,9 @@ function renderApp() {
       titleEl.textContent = 'Stats';
     }
     renderStats(root);
+  } else if (App.tab === 'search') {
+    titleEl.textContent = 'Search';
+    renderSearch(root);
   }
 
   root.insertAdjacentHTML('beforeend', creditHtml());
@@ -443,59 +557,94 @@ function creditHtml() {
 
 function renderPracticeTopbar(actionsEl) {
   const examLabel = App.filters.exam || 'SAT + PSAT';
+  const sectionLabel = App.filters.section === 'math' ? 'Math'
+    : App.filters.section === 'rw' ? 'R&W' : 'R&W + Math';
   const hasFilters = App.filters.difficulties.length || App.filters.domains.length;
 
   const wrap = document.createElement('div');
   wrap.style.position = 'relative';
   wrap.style.display = 'flex';
   wrap.style.alignItems = 'center';
-  wrap.style.gap = '10px';
+  wrap.style.gap = '8px';
   wrap.innerHTML = `
     <button class="menu-btn" data-action="exam-menu">${examLabel} <span class="chev">▾</span></button>
+    <button class="menu-btn" data-action="section-menu">${sectionLabel} <span class="chev">▾</span></button>
     <button class="icon-btn ${hasFilters ? 'active' : ''}" data-action="open-filters">☰</button>
   `;
   actionsEl.appendChild(wrap);
 
   wrap.querySelector('[data-action="exam-menu"]').addEventListener('click', (e) => {
     e.stopPropagation();
+    App.sectionMenuOpen = false;
     App.examMenuOpen = !App.examMenuOpen;
     renderExamMenu(wrap);
+    renderSectionMenu(wrap);
+  });
+  wrap.querySelector('[data-action="section-menu"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    App.examMenuOpen = false;
+    App.sectionMenuOpen = !App.sectionMenuOpen;
+    renderExamMenu(wrap);
+    renderSectionMenu(wrap);
   });
   wrap.querySelector('[data-action="open-filters"]').addEventListener('click', () => {
     openFilterSheet();
   });
 
   if (App.examMenuOpen) renderExamMenu(wrap);
+  if (App.sectionMenuOpen) renderSectionMenu(wrap);
 }
 
-function renderExamMenu(wrap) {
-  let existing = wrap.querySelector('.popover');
+function popoverMenu(wrap, cls, options, current, onPick) {
+  let existing = wrap.querySelector('.' + cls);
   if (existing) existing.remove();
-  if (!App.examMenuOpen) return;
   const pop = document.createElement('div');
-  pop.className = 'popover';
-  const options = [['', 'SAT and PSAT'], ['SAT', 'SAT'], ['PSAT', 'PSAT']];
+  pop.className = 'popover ' + cls;
   pop.innerHTML = options.map(([val, label]) =>
-    `<button class="popover-item ${App.filters.exam === val ? 'on' : ''}" data-val="${val}">${label}</button>`
+    `<button class="popover-item ${current === val ? 'on' : ''}" data-val="${val}">${label}</button>`
   ).join('');
   wrap.appendChild(pop);
   pop.querySelectorAll('.popover-item').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      App.filters.exam = btn.dataset.val;
+      onPick(btn.dataset.val);
+    });
+  });
+  const closer = () => {
+    App.examMenuOpen = false;
+    App.sectionMenuOpen = false;
+    const p = wrap.querySelector('.' + cls);
+    if (p) p.remove();
+    document.removeEventListener('click', closer);
+  };
+  setTimeout(() => document.addEventListener('click', closer), 0);
+}
+
+function renderExamMenu(wrap) {
+  wrap.querySelector('.exam-pop')?.remove();
+  if (!App.examMenuOpen) return;
+  popoverMenu(wrap, 'exam-pop', [['', 'SAT and PSAT'], ['SAT', 'SAT'], ['PSAT', 'PSAT']],
+    App.filters.exam, (val) => {
+      App.filters.exam = val;
       App.examMenuOpen = false;
       saveFilters();
       App.practiceCurrentId = null;
       renderApp();
     });
-  });
-  const closer = (e) => {
-    App.examMenuOpen = false;
-    const p = wrap.querySelector('.popover');
-    if (p) p.remove();
-    document.removeEventListener('click', closer);
-  };
-  setTimeout(() => document.addEventListener('click', closer), 0);
+}
+
+function renderSectionMenu(wrap) {
+  wrap.querySelector('.section-pop')?.remove();
+  if (!App.sectionMenuOpen) return;
+  popoverMenu(wrap, 'section-pop',
+    [['', 'Reading & Writing + Math'], ['rw', 'Reading & Writing'], ['math', 'Math']],
+    App.filters.section, (val) => {
+      App.filters.section = val;
+      App.sectionMenuOpen = false;
+      saveFilters();
+      App.practiceCurrentId = null;
+      renderApp();
+    });
 }
 
 function openFilterSheet() {
@@ -562,10 +711,11 @@ function openFilterSheet() {
 }
 
 function renderPractice(root) {
-  const exams = activeExamsSet(), difficulties = activeDifficultiesSet(), domains = activeDomainsSet();
+  const exams = activeExamsSet(), sections = activeSectionsSet(),
+    difficulties = activeDifficultiesSet(), domains = activeDomainsSet();
   let current = App.practiceCurrentId ? Store.question(App.practiceCurrentId) : null;
   if (!current) {
-    current = Store.nextQuestion({ exams, difficulties, domains, excluding: null });
+    current = Store.nextQuestion({ exams, sections, difficulties, domains, excluding: null });
     App.practiceCurrentId = current ? current.id : null;
   }
 
@@ -588,8 +738,9 @@ function renderPractice(root) {
     submitLabel: 'Submit answer',
     nextLabel: 'Next question',
     onNext: () => {
-      const exams = activeExamsSet(), difficulties = activeDifficultiesSet(), domains = activeDomainsSet();
-      const next = Store.nextQuestion({ exams, difficulties, domains, excluding: current.id });
+      const exams = activeExamsSet(), sections = activeSectionsSet(),
+        difficulties = activeDifficultiesSet(), domains = activeDomainsSet();
+      const next = Store.nextQuestion({ exams, sections, difficulties, domains, excluding: current.id });
       App.practiceCurrentId = next ? next.id : null;
       renderApp();
       window.scrollTo({ top: 0 });
@@ -647,7 +798,7 @@ function renderReview(root) {
     }
     return `<div class="list-row ${locked ? 'locked' : ''}" data-qid="${q.id}">
       <div class="badge-row">${examBadge(q.exam)}${difficultyBadge(q.difficulty)}${tagBadge(q.skill)}${dots}</div>
-      <div class="list-row-stem">${escapeHtml(stripUnderlineMarkers(q.stem))}</div>
+      ${questionPreviewHtml(q)}
       <div class="list-row-foot">
         <span>${p.correct} right · ${p.wrong} wrong</span>
         ${locked && unlocks ? `<span style="margin-left:auto">🔒 Unlocks ${fmtShortDate(unlocks)}</span>` : ''}
@@ -865,7 +1016,7 @@ function renderStatsSubview(root) {
     const p = Store.progress(q.id);
     return `<div class="list-row" data-qid="${q.id}">
       <div class="badge-row">${examBadge(q.exam)}${difficultyBadge(q.difficulty)}${tagBadge(q.skill)}</div>
-      <div class="list-row-stem">${escapeHtml(stripUnderlineMarkers(q.stem))}</div>
+      ${questionPreviewHtml(q)}
       <div class="list-row-foot"><span>${p.correct} right · ${p.wrong} wrong</span></div>
     </div>`;
   }).join('');
@@ -899,6 +1050,71 @@ function openReattemptModal(question) {
     infoBannerHtml: `<div class="info-banner">ℹ️ Practice only — this won't affect your stats.</div>`,
     onNext: () => wrap.remove()
   });
+}
+
+/* ---------------- Search tab ---------------- */
+
+const SEARCH_LIMIT = 150;
+
+function searchQuestions(query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return Store.questions.filter(item => {
+    if (item.id.toLowerCase() === q) return true;
+    if (item.skill.toLowerCase().includes(q)) return true;
+    if (item.domain.toLowerCase().includes(q)) return true;
+    if (item.section === 'rw' && stripUnderlineMarkers(item.stem).toLowerCase().includes(q)) return true;
+    return false;
+  });
+}
+
+function renderSearch(root) {
+  root.innerHTML = `
+    <div class="search-row">
+      <input type="text" class="search-input" id="search-input" placeholder="Search by keyword, skill, category, or question ID…" value="${escapeHtml(App.searchQuery)}">
+    </div>
+    <div id="search-results"></div>
+  `;
+  const input = root.querySelector('#search-input');
+  const resultsEl = root.querySelector('#search-results');
+
+  function draw() {
+    const query = App.searchQuery;
+    if (!query.trim()) {
+      resultsEl.innerHTML = `<div class="empty-state">
+        <div class="es-icon">🔎</div>
+        <div class="es-title">Find any question</div>
+        <div class="es-desc">Search the whole bank (Reading &amp; Writing and Math) by keyword, skill, category, or exact question ID. Nothing here affects your stats — this is just for looking things up.</div>
+      </div>`;
+      return;
+    }
+    const matches = searchQuestions(query);
+    if (matches.length === 0) {
+      resultsEl.innerHTML = `<div class="empty-state">
+        <div class="es-icon">🔎</div>
+        <div class="es-title">No matches</div>
+        <div class="es-desc">Try a different keyword, skill name, or question ID.</div>
+      </div>`;
+      return;
+    }
+    const shown = matches.slice(0, SEARCH_LIMIT);
+    resultsEl.innerHTML =
+      `<div class="search-count">${matches.length} match${matches.length === 1 ? '' : 'es'}${matches.length > SEARCH_LIMIT ? ` — showing first ${SEARCH_LIMIT}` : ''}</div>` +
+      shown.map(qq => `<div class="list-row" data-qid="${qq.id}">
+        <div class="badge-row">${examBadge(qq.exam)}${difficultyBadge(qq.difficulty)}${tagBadge(qq.skill)}</div>
+        ${questionPreviewHtml(qq)}
+        <div class="list-row-foot"><span>${qq.id}</span></div>
+      </div>`).join('');
+    resultsEl.querySelectorAll('.list-row').forEach(row => {
+      row.addEventListener('click', () => openReattemptModal(Store.question(row.dataset.qid)));
+    });
+  }
+
+  input.addEventListener('input', () => {
+    App.searchQuery = input.value;
+    draw();
+  });
+  draw();
 }
 
 /* ============================== Boot ============================== */

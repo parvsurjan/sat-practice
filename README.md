@@ -5,8 +5,17 @@ question PDFs in this repo. No network, no accounts — everything ships in the 
 and all progress stays on the device.
 
 **Try it in the browser:** [parvsurjan.github.io/sat-practice](https://parvsurjan.github.io/sat-practice/)
-— a web version of the Practice/Review/Stats flow (`docs/`), no install needed.
-Progress there is saved per-browser via `localStorage`.
+— a web version of Practice/Review/Stats/Search (`docs/`), no install needed. Progress
+is saved per-browser via `localStorage` only — nothing is sent anywhere, so answers and
+stats stay private to whoever is using that browser.
+
+The website also includes **3,553 SAT/PSAT Math questions** (`sat-math-all.pdf` /
+`psat-math-all.pdf`, not in this repo — see `tools/extract_math.py`), web-only. Math
+notation in those PDFs isn't real text, so each question is stored as a handful of
+cropped images (prompt, each choice, rationale) instead of plain text; free-response
+(student-produced response) questions get a graded text-entry box instead of choices.
+This data lives entirely under `docs/data/math-*` and is never added to
+`SATPrep/SATPrep/Resources/`, so it doesn't affect the iOS app or its size on your phone.
 
 **3,689 questions**, each with answer choices, the correct answer, the official
 rationale, test, difficulty, domain and skill:
